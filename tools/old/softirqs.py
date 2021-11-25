@@ -114,7 +114,7 @@ else:
 
     int trace_completion(struct pt_regs *ctx)
     {
-        u64 *tsp, delta, ip, *ipp;
+        u64 *tsp, delta, ip = 0, *ipp;
         u32 pid = bpf_get_current_pid_tgid();
         // fetch timestamp and calculate delta
         tsp = start.lookup(&pid);
@@ -122,6 +122,7 @@ else:
         COMMON
 
         // store as sum or histogram
+        if (ipp) ip = *ipp;
         irq_key_t key = {
         STORE
 
@@ -144,9 +145,10 @@ if args.dist:
         '.slot = bpf_log2l(delta)};' +
         'dist.increment(key);')
 else:
+    if not args.bycpu:
+        bpf_text = bpf_text.replace('STORE', '.ip = ip, STORE')
     bpf_text = bpf_text.replace('STORE',
-        ' .ip = ip, .slot = 0 /* ignore */};' +
-        'u64 zero = 0, *vp = dist.lookup_or_init(&key, &zero);' +
+        '}; u64 zero = 0, *vp = dist.lookup_or_init(&key, &zero);' +
         'if (vp) { (*vp) += delta; }')
 if debug:
     print(bpf_text)
@@ -190,9 +192,9 @@ while (1):
             dist.print_log2_hist(label, "softirq", section_print_fn=b.ksym)
     else:
         if args.bycpu:
-            print("%-26s %11s %11s" % ("SOFTIRQ", "CPU", "TOTAL_" + label))
+            print("%11s %11s" % ("CPU", "TOTAL_" + label))
             for k, v in sorted(dist.items(), key=lambda dist: dist[1].value):
-                print("%-26s %11d %11d" % (b.ksym(k.ip), k.cpu, v.value / factor))
+                print("%11d %11d" % (k.cpu, v.value / factor))
         else:
             print("%-26s %11s" % ("SOFTIRQ", "TOTAL_" + label))
             for k, v in sorted(dist.items(), key=lambda dist: dist[1].value):
